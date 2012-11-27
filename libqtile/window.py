@@ -99,6 +99,10 @@ FULLSCREEN = 4
 TOP = 5
 MINIMIZED = 6
 
+_NET_WM_STATE_REMOVE = 0
+_NET_WM_STATE_ADD = 1
+_NET_WM_STATE_TOGGLE = 2
+
 
 class _Window(command.CommandObject):
     def __init__(self, window, qtile):
@@ -132,7 +136,7 @@ class _Window(command.CommandObject):
 
         self.hints = {
             'input': True,
-            'state': NormalState,  # Normal state
+            'state': self.state,
             'icon_pixmap': None,
             'icon_window': None,
             'icon_x': 0,
@@ -937,7 +941,32 @@ class Window(_Window):
                 self.bordercolor,
                 twice=True,
             )
+        self.updateState()
         return False
+
+    def handle_ClientMessage(self, event):
+        atoms = self.qtile.conn.atoms
+
+        opcode = xcb.xproto.ClientMessageData(event, 0, 20).data32[2]
+        data = xcb.xproto.ClientMessageData(event, 12, 20)
+        if atoms["_NET_WM_STATE"] == opcode:
+            action = data.data32[0]
+            first_prop = atoms.get_name(data.data32[1])
+            second_prop = atoms.get_name(data.data32[2])
+            if first_prop == "_NET_WM_STATE_FULLSCREEN":
+                if action ==  _NET_WM_STATE_REMOVE:
+                    self.fullscreen = False
+                elif action == _NET_WM_STATE_ADD:
+                    self.fullscreen = not self.fullscreen
+                elif action == _NET_WM_STATE_TOGGLE:
+                    self.fullscreen = not self.fullscreen
+            else:
+                print "WTFPROP 1", first_prop
+                print "WTFPROP 2", second_prop
+
+            print first_prop
+            print second_prop
+            print action
 
     def handle_PropertyNotify(self, e):
         name = self.qtile.conn.atoms.get_name(e.atom)
@@ -947,7 +976,7 @@ class Window(_Window):
         elif name == "WM_HINTS":
             self.updateHints()
         elif name == "WM_NORMAL_HINTS":
-            pass
+            self.updateHints()
         elif name == "WM_NAME":
             self.updateName()
         elif name == "_NET_WM_NAME":
@@ -969,7 +998,11 @@ class Window(_Window):
         elif name == "WM_PROTOCOLS":
             pass
         elif name == "_NET_WM_DESKTOP":
-            pass
+            # Some windows set the state(fullscreen) when starts,
+            # updateState is here because the group and the screen
+            # are set when the property is emitted
+            #self.updateState()
+            self.updateState()
         elif name == "_NET_WM_USER_TIME":
             if not self.qtile.config.follow_mouse_focus and \
                             self.group.currentWindow != self:
